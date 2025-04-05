@@ -5,9 +5,17 @@
 #pragma once
 #include "lexicalAnalysis.h"
 #include <iostream>
+
+#include "SymbolTable.h"
+
 //语法分析器 采用递归下降分析
 class Parser {
+    struct TempVar {
+        int type = 0; // 0为整数，1为小数，2为目标标识符的名字，3为临时变量名
+        string var = "";
+    };
     Token currentToken;
+    SymbolTable symbolTable;
 
     void nextToken() {
         currentToken = getNextToken();
@@ -69,17 +77,21 @@ class Parser {
     void ConstDefinition() {
         // 定义常量 -> const 类型 常量声明 { , 常量声明 } ;
         match(KEYWORD,"const");
-        Type();
-        VarDeclaration();
+        const SymbolType type = Type();
+        Symbol s = VarDeclaration(); s.type = type; // 获取常量声明
+        symbolTable.addSymbol(s);
         while (currentToken.type == DELIMITER && currentToken.value == ",") {
             match(DELIMITER,",");
-            VarDeclaration();
+            s = VarDeclaration(); s.type = type; // 获取常量声明
+            symbolTable.addSymbol(s);
         }
         match(DELIMITER,";");
     }
 
-    void VarDeclaration() {
+    Symbol VarDeclaration() {
         // 常量声明 -> 标识符 = 数字(整数或小数)
+        string varName = currentToken.value;
+        int row = currentToken.row, col = currentToken.col;
         match(IDENTIFIER);
         match(ASSIGN);
         if (currentToken.type == INT || currentToken.type == FLOAT) {
@@ -87,55 +99,73 @@ class Parser {
         } else {
             cerr << "语法错误: 期望整数或小数但得到 " << currentToken.value << " 在 (" << currentToken.row << "," << currentToken.col <<')'<< endl;
         }
+        return {varName,SYMBOL_INT, row, col, true};
     }
 
     void VarDefinition() {
-        // 定义变量 -> 类型 变量声明 { , 变量声明 } ;
-        Type();
+        // 定义变量 -> 类型 变量名 { , 变量名 } ;
+        const SymbolType type = Type();
+        symbolTable.addSymbol(Symbol(currentToken.value,type,currentToken.row,currentToken.col)); // 添加变量到符号表
         match(IDENTIFIER);
         while (currentToken.type == DELIMITER && currentToken.value == ",") {
             match(DELIMITER,",");
+            symbolTable.addSymbol(Symbol(currentToken.value,type,currentToken.row,currentToken.col));
             match(IDENTIFIER);
         }
         match(DELIMITER,";");
     }
 
-    void Type() {
+    SymbolType Type() {
+        SymbolType type = SYMBOL_INT; // 防止出错，默认类型为int
         // 数据类型 -> int | float
         if (currentToken.value == "int" || currentToken.value == "float") {
+            type = currentToken.value == "int" ? SYMBOL_INT : SYMBOL_FLOAT;
             match(KEYWORD);
         } else {
             cerr << "语法错误: 期望类型 'int' 或 'float' 但得到 " << currentToken.value  << " 在 (" << currentToken.row << "," << currentToken.col <<')'<< endl;
         }
+        return type;
     }
 
     void Method() {
         // 定义函数 -> def 标识符 ( 参数列表 ) 复合语句
         match(KEYWORD,"def");
+        string funcName = currentToken.value; // 函数名
+        int row = currentToken.row, col = currentToken.col;
         match(IDENTIFIER);
         match(DELIMITER,"(");
-        ParamList();
+        vector<Symbol> params = ParamList();
+        symbolTable.addSymbol(Symbol(funcName,params,row,col)); // 添加函数到符号表
         match(DELIMITER,")");
         CompSt();
     }
 
-    void ParamList() {
+    vector<Symbol> ParamList() {
+        vector<Symbol> params;
         // 形参参数列表 -> 类型 标识符 { , 类型 标识符 }
         if (currentToken.type == KEYWORD && (currentToken.value == "int" || currentToken.value == "float")) {
-            Type();
+            SymbolType type = Type();
+            params.emplace_back(currentToken.value,type,currentToken.row,currentToken.col); // 添加参数到符号表
             match(IDENTIFIER);
             while (currentToken.type == DELIMITER && currentToken.value == ",") {
                 match(DELIMITER,",");
-                Type();
+                type = Type();
+                params.emplace_back(currentToken.value,type,currentToken.row,currentToken.col); // 添加参数到符号表
                 match(IDENTIFIER);
             }
         }
+        return params;
     }
 
-    void CompSt() {
+    void CompSt(const vector<Symbol> & params = {}) {
         // 复合语句块 -> begin 语句列表 end
         match(KEYWORD,"begin");
+        symbolTable.enterScope(); // 进入新作用域
+        for (const auto& param : params) {
+            symbolTable.addSymbol(param); // 添加参数到符号表
+        } // 参数需要在函数体内定义
         StmtList();
+        symbolTable.exitScope(); // 退出作用域
         match(KEYWORD,"end");
     }
 
@@ -178,10 +208,12 @@ class Parser {
 
     void LocalVariableDeclaration() {
         // 局部变量定义语句 -> 类型 变量声明 { , 变量声明 } ;
-        Type();
+        SymbolType type = Type();
+        symbolTable.addSymbol(Symbol(currentToken.value,type,currentToken.row,currentToken.col)); // 添加变量到符号表
         match(IDENTIFIER);
         while (currentToken.type == DELIMITER && currentToken.value == ",") {
             match(DELIMITER,",");
+            symbolTable.addSymbol(Symbol(currentToken.value,type,currentToken.row,currentToken.col));
             match(IDENTIFIER);
         }
         match(DELIMITER,";");
@@ -189,23 +221,30 @@ class Parser {
 
     void CallStmt() {
         // 函数调用语句 -> call 标识符 ( 实参列表 ) ;
+        int row = currentToken.row, col = currentToken.col;
         match(KEYWORD,"call");
+        string funcName = currentToken.value;
         match(IDENTIFIER);
         match(DELIMITER,"(");
-        ActParamList();
+        vector<SymbolType> symbols = ActParamList();
+        symbolTable.checkFunctionCall(funcName,symbols,row,col); // 检查函数调用
         match(DELIMITER,")");
         match(DELIMITER,";");
     }
 
-    void ActParamList() {
+    vector<SymbolType> ActParamList() {
         // 实参列表 -> 表达式 { , 表达式 } | 空
+        vector<SymbolType> argTypes;
         if (currentToken.type == IDENTIFIER || currentToken.type == INT || currentToken.type == FLOAT) {
-            Exp();
+            TempVar tempVar = Exp();
+            argTypes.push_back(tempVar.type==0?SYMBOL_INT:SYMBOL_FLOAT);
             while (currentToken.type == DELIMITER && currentToken.value == ",") {
                 match(DELIMITER,",");
-                Exp();
+                TempVar tempVar = Exp();
+                argTypes.push_back(tempVar.type==0?SYMBOL_INT:SYMBOL_FLOAT);
             }
         }
+        return argTypes;
     }
 
     void AssignmentStmt() {
@@ -244,37 +283,47 @@ class Parser {
         match(DELIMITER,";");
     }
 
-    void Exp() {
+    TempVar Exp() {
         // 表达式 -> 项 { + 项 | - 项 }
+
+        // todo: 表达式的tempvar需要在完成四则表达式时完成。
         Term();
         while (currentToken.type == ARITHMETIC && (currentToken.value == "+" || currentToken.value == "-")) {
             match(ARITHMETIC);
             Term();
         }
+        return {};
     }
 
-    void Term() {
+    TempVar Term() {
         // 项 -> 因子 { * 因子 | / 因子 }
+
+        // todo: 项的tempvar需要在完成四则表达式时完成。
         Factor();
         while (currentToken.type == ARITHMETIC && (currentToken.value == "*" || currentToken.value == "/")) {
             match(ARITHMETIC);
             Factor();
         }
+        return {};
     }
 
-    void Factor() {
+    TempVar Factor() {
         // 因子 -> 标识符 | 数字 | ( 表达式 )
+        TempVar tempVar;
         if (currentToken.type == IDENTIFIER) {
+            tempVar = {2, currentToken.value}; // 2表示标识符
             match(IDENTIFIER);
         } else if (currentToken.type == INT || currentToken.type == FLOAT) {
+            tempVar = {currentToken.type == INT ? 0 : 1, currentToken.value}; // 0表示整数，1表示小数
             match(currentToken.type);
         } else if (currentToken.type == DELIMITER && currentToken.value == "(") {
             match(DELIMITER,"(");
-            Exp();
+            tempVar = Exp();
             match(DELIMITER,")");
         } else {
             cerr << "语法错误: 无效的因子 " << currentToken.value << " 在 (" << currentToken.row << "," << currentToken.col <<')'<< endl;
         }
+        return tempVar;
     }
 
     void ConditionalExp() {
