@@ -21,7 +21,7 @@ class Parser {
             // 如果是ERROR类型，说明词法分析出错，输出此法错误信息，否则输出语法错误信息
             if (currentToken.type==ERROR) {
                 if (currentToken.value=="EOF") {
-                    cerr <<"错误: 期望 "<<(expectedValue.empty() ? TypeToString(expectedType) : expectedValue)
+                    cerr <<"语法错误: 期望 "<<(expectedValue.empty() ? TypeToString(expectedType) : expectedValue)
                     <<" 但遇到突发的文件结束在 ("<< currentToken.row << "," << currentToken.col <<')'<< endl;
                     exit(1);
                 }
@@ -317,5 +317,9 @@ public:
     void parse() {
         nextToken();
         Program();
+        // 如果没有到文件末尾，说明语法错误
+        if (currentToken.type != ERROR || currentToken.value != "EOF") {
+            cerr << "语法错误: 期望文件结束但得到 " << currentToken.value << " 在 (" << currentToken.row << "," << currentToken.col <<')'<< endl;
+        }
     }
 };
