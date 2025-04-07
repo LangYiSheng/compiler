@@ -307,9 +307,18 @@ class Parser {
     void LoopStmt() {
         // 循环语句 -> while 条件表达式 do 语句 endwh
         match(KEYWORD,"while");
-        ConditionalExp();
+        string startLabel = generator.newLabel(); // 循环跳回
+        string endLabel = generator.newLabel(); // 结束
+
+        generator.add("label", startLabel, "_", "_");
+
+        TempVar cond = ConditionalExp();
+        generator.add("jz", cond.var, "_", endLabel); //如果是false 就结束
         match(KEYWORD,"do");
         Stmt();
+        generator.add("j", "_", "_", startLabel); // 否则跳回起点
+
+        generator.add("label", endLabel, "_", "_");
         match(KEYWORD,"endwh");
     }
 
