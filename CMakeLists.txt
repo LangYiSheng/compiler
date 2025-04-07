@@ -10,6 +10,7 @@ add_executable(compiler
         grammaticalAnalysis.h
         SymbolTable.h
         QuadrupleGenerator.h
+        Test/LanCherLogger.h
 )
 
 set(CMAKE_EXE_LINKER_FLAGS "-static")

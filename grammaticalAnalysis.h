@@ -14,6 +14,7 @@ class Parser {
     struct TempVar {
         int type = 0; // 0为整数，1为小数，2为目标标识符的名字，3为临时变量名
         string var = "";
+
     };
     QuadrupleGenerator generator;// 四元式生成器
     SymbolTable symbolTable;// 符号表
@@ -156,11 +157,6 @@ class Parser {
                 match(IDENTIFIER);
             }
         }
-        cout<<"[LOG] 函数参数列表: ";
-        for (const auto& param : params) {
-            cout<<param.name<<" ";
-        }
-        cout<<endl;
         return params;
     }
 
@@ -267,15 +263,45 @@ class Parser {
 
     void ConditionalStmt() {
         // 条件语句 -> if 条件表达式 then 语句 [ else 语句 ] fi
-        match(KEYWORD,"if");
-        ConditionalExp();
-        match(KEYWORD,"then");
+
+        // 你可能会问，在没有else 的情况下，这不会重复生成两个标签吗？ 没关系的孩子 这样逻辑统一还安全。
+        // match(KEYWORD,"if");
+        // TempVar cond = ConditionalExp();
+        // string elseLabel = generator.newLabel();
+        // string endLabel = generator.newLabel();
+        // generator.add("jz", cond.var, "_", elseLabel);
+        // match(KEYWORD,"then");
+        // Stmt();
+        // generator.add("j", "_", "_", endLabel);
+        // generator.add("label", elseLabel, "_", "_");
+        // if (currentToken.type == KEYWORD && currentToken.value == "else") {
+        //     match(KEYWORD);
+        //     Stmt();
+        // }
+        // generator.add("label", endLabel, "_", "_");
+        // match(KEYWORD,"fi");
+
+        // 开玩笑的孩子们 我觉得还是修一下比较好。
+        match(KEYWORD, "if");
+        TempVar cond = ConditionalExp();
+        string elseLabel = generator.newLabel();  // 条件不满足时跳转
+        string endLabel;                          // 有 else 分支时才需要
+        generator.add("jz", cond.var, "_", elseLabel);
+        match(KEYWORD, "then");
         Stmt();
-        if (currentToken.type == KEYWORD&&currentToken.value == "else") {
+        if (currentToken.type == KEYWORD && currentToken.value == "else") {
             match(KEYWORD);
-            Stmt();
+            // 有 else 分支，才需要跳出 if 的 endLabel
+            endLabel = generator.newLabel();
+            generator.add("j", "_", "_", endLabel);
+            generator.add("label", elseLabel, "_", "_");
+            Stmt();  // else 分支语句
+            generator.add("label", endLabel, "_", "_");
+        } else {
+            // 没有 else，直接贴上 elseLabel 作为结束点
+            generator.add("label", elseLabel, "_", "_");
         }
-        match(KEYWORD,"fi");
+        match(KEYWORD, "fi");
     }
 
     void LoopStmt() {
@@ -340,29 +366,46 @@ class Parser {
         return tempVar;
     }
 
-    void ConditionalExp() {
+    TempVar ConditionalExp() {
         // 条件表达式 -> 关系表达式 {or 关系表达式}
-        RelationExp();
+        TempVar left = RelationExp();
         while (currentToken.type == KEYWORD && currentToken.value == "or") {
             match(KEYWORD,"or");
-            RelationExp();
+            TempVar right = RelationExp();
+            string temp = generator.newTemp();
+            generator.add("or", left.var, right.var, temp);
+            left.var = temp;
         }
+        return left;
     }
 
-    void RelationExp() {
+    TempVar RelationExp() {
         // 关系表达式 -> {组合表达式 and 组合表达式}
-        CompExp();
+        TempVar left = CompExp();
         while (currentToken.type == KEYWORD && currentToken.value == "and") {
             match(KEYWORD,"and");
-            CompExp();
+            TempVar right = CompExp();
+            string temp = generator.newTemp();
+            generator.add("and", left.var, right.var, temp);
+            left.var = temp;
         }
+        return left;
     }
 
-    void CompExp() {
+    TempVar CompExp() {
         // 组合表达式 -> 表达式 关系符 表达式
-        Exp();
+        TempVar result;
+        TempVar left = Exp();
+        string op = currentToken.value;
         CmpOp();
-        Exp();
+        TempVar right = Exp();
+
+        // 生成比较运算的四元式
+        result.var = generator.newTemp();
+        result.type = 3; // 3表示临时变量
+        generator.add(op, left.var, right.var, result.var);
+
+        return result;
     }
 
     void CmpOp() {

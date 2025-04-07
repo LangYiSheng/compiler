@@ -9,6 +9,8 @@
 #include<unordered_map>
 #include<string>
 #include<iostream>
+
+#include "Test/LanCherLogger.h"
 using namespace std;
 
 
@@ -85,7 +87,7 @@ public:
 
     // 添加符号到当前作用域
     bool addSymbol(Symbol symbol) {
-        cout<<"[符号表] 添加"<<(symbol.type==SYMBOL_FUNCTION?"函数":symbol.isConst?"常量":"变量")<<": "<<symbol.name<<endl;
+        LanCherLogger::log("符号表", static_cast<string>("添加") + (symbol.type == SYMBOL_FUNCTION ? "函数" : symbol.isConst ? "常量" : "变量") + ": " + symbol.name);
         auto& currentScope = scopes.back();
         const string& name = symbol.name;
         if (currentScope.count(name)) {
