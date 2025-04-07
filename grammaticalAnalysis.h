@@ -7,6 +7,7 @@
 #include <iostream>
 
 #include "SymbolTable.h"
+#include "QuadrupleGenerator.h"
 
 //语法分析器 采用递归下降分析
 class Parser {
@@ -14,8 +15,9 @@ class Parser {
         int type = 0; // 0为整数，1为小数，2为目标标识符的名字，3为临时变量名
         string var = "";
     };
+    QuadrupleGenerator generator;// 四元式生成器
+    SymbolTable symbolTable;// 符号表
     Token currentToken;
-    SymbolTable symbolTable;
 
     void nextToken() {
         currentToken = getNextToken();
@@ -137,7 +139,7 @@ class Parser {
         vector<Symbol> params = ParamList();
         symbolTable.addSymbol(Symbol(funcName,params,row,col)); // 添加函数到符号表
         match(DELIMITER,")");
-        CompSt();
+        CompSt(params);
     }
 
     vector<Symbol> ParamList() {
@@ -154,6 +156,11 @@ class Parser {
                 match(IDENTIFIER);
             }
         }
+        cout<<"[LOG] 函数参数列表: ";
+        for (const auto& param : params) {
+            cout<<param.name<<" ";
+        }
+        cout<<endl;
         return params;
     }
 
@@ -250,9 +257,11 @@ class Parser {
     void AssignmentStmt() {
         // 赋值语句 -> let 标识符 = 表达式 ;
         match(KEYWORD,"let");
+        string id = currentToken.value;
         match(IDENTIFIER);
         match(ASSIGN);
-        Exp();
+        TempVar exp = Exp();
+        generator.add("=", exp.var, "_", id);
         match(DELIMITER,";");
     }
 
@@ -285,26 +294,30 @@ class Parser {
 
     TempVar Exp() {
         // 表达式 -> 项 { + 项 | - 项 }
-
-        // todo: 表达式的tempvar需要在完成四则表达式时完成。
-        Term();
+        TempVar left = Term();
         while (currentToken.type == ARITHMETIC && (currentToken.value == "+" || currentToken.value == "-")) {
+            string op = currentToken.value;
             match(ARITHMETIC);
-            Term();
+            TempVar right = Term();
+            string temp = generator.newTemp();
+            generator.add(op, left.var, right.var, temp);
+            left = {3, temp};
         }
-        return {};
+        return left;
     }
 
     TempVar Term() {
         // 项 -> 因子 { * 因子 | / 因子 }
-
-        // todo: 项的tempvar需要在完成四则表达式时完成。
-        Factor();
+        TempVar left = Factor();
         while (currentToken.type == ARITHMETIC && (currentToken.value == "*" || currentToken.value == "/")) {
+            string op = currentToken.value;
             match(ARITHMETIC);
-            Factor();
+            TempVar right = Factor();
+            string temp = generator.newTemp(); // 创建一个新的临时变量
+            generator.add(op, left.var, right.var, temp); // 生成四元式
+            left = {3, temp};  // 3表示临时变量
         }
-        return {};
+        return left;
     }
 
     TempVar Factor() {
@@ -312,6 +325,7 @@ class Parser {
         TempVar tempVar;
         if (currentToken.type == IDENTIFIER) {
             tempVar = {2, currentToken.value}; // 2表示标识符
+            symbolTable.markUsed(currentToken.value,currentToken.row,currentToken.col); // 标记变量为已使用
             match(IDENTIFIER);
         } else if (currentToken.type == INT || currentToken.type == FLOAT) {
             tempVar = {currentToken.type == INT ? 0 : 1, currentToken.value}; // 0表示整数，1表示小数
@@ -363,12 +377,14 @@ class Parser {
 
 public:
     //解析
-    void parse() {
+    vector<Quadruple> parse() {
         nextToken();
         Program();
         // 如果没有到文件末尾，说明语法错误
         if (currentToken.type != ERROR || currentToken.value != "EOF") {
             cerr << "语法错误: 期望文件结束但得到 " << currentToken.value << " 在 (" << currentToken.row << "," << currentToken.col <<')'<< endl;
         }
+        cout << "语法分析完成，四元式生成完成！" << endl;
+        return generator.getQuadruples();
     }
 };
