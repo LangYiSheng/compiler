@@ -34,7 +34,6 @@ class Parser {
                 if (currentToken.value=="EOF") {
                     cerr <<"语法错误: 期望 "<<(expectedValue.empty() ? TypeToString(expectedType) : expectedValue)
                     <<" 但遇到突发的文件结束在 ("<< currentToken.row << "," << currentToken.col <<')'<< endl;
-                    exit(1);
                 }
                 cerr << "词法错误: " << currentToken.value << " 在 (" << currentToken.row << "," << currentToken.col <<')'<< endl;
                 return;
@@ -140,7 +139,9 @@ class Parser {
         vector<Symbol> params = ParamList();
         symbolTable.addSymbol(Symbol(funcName,params,row,col)); // 添加函数到符号表
         match(DELIMITER,")");
+        generator.add("procedure","","",funcName); // 生成函数开始的四元式
         CompSt(params);
+        generator.add("return","","",""); // 生成函数结束的四元式 隐式返回
     }
 
     vector<Symbol> ParamList() {
@@ -229,25 +230,36 @@ class Parser {
         string funcName = currentToken.value;
         match(IDENTIFIER);
         match(DELIMITER,"(");
-        vector<SymbolType> symbols = ActParamList();
-        symbolTable.checkFunctionCall(funcName,symbols,row,col); // 检查函数调用
+        vector<pair<string,SymbolType>> args = ActParamList();
+        for (int i = int(args.size())-1; i >= 0; --i) {
+            generator.add("push", "", "", args[i].first);
+        }
+        // 这里的args[i].first是参数名，args[i].second是参数类型，为了不改checkFunctionCall的参数类型，使用一些语法糖
+        symbolTable.checkFunctionCall(funcName,
+            [&] {
+                vector<SymbolType> t;
+                for(auto &p:args)
+                    t.push_back(p.second);
+                return t;
+        }(), row,col);
+        generator.add("call", "", "", funcName); // 生成函数调用的四元式
         match(DELIMITER,")");
         match(DELIMITER,";");
     }
 
-    vector<SymbolType> ActParamList() {
+    vector<pair<string,SymbolType>> ActParamList() {
         // 实参列表 -> 表达式 { , 表达式 } | 空
-        vector<SymbolType> argTypes;
+        vector<pair<string,SymbolType>> args;
         if (currentToken.type == IDENTIFIER || currentToken.type == INT || currentToken.type == FLOAT) {
-            TempVar tempVar = Exp();
-            argTypes.push_back(tempVar.type==0?SYMBOL_INT:SYMBOL_FLOAT);
-            while (currentToken.type == DELIMITER && currentToken.value == ",") {
-                match(DELIMITER,",");
-                TempVar tempVar = Exp();
-                argTypes.push_back(tempVar.type==0?SYMBOL_INT:SYMBOL_FLOAT);
-            }
-        }
-        return argTypes;
+             TempVar tv = Exp();
+             args.emplace_back(tv.var, tv.type==0?SYMBOL_INT:SYMBOL_FLOAT);
+             while (currentToken.type == DELIMITER && currentToken.value == ",") {
+                 match(DELIMITER,",");
+                 TempVar tv2 = Exp();
+                 args.emplace_back(tv2.var, tv2.type==0?SYMBOL_INT:SYMBOL_FLOAT);
+             }
+         }
+        return args;
     }
 
     void AssignmentStmt() {
@@ -324,6 +336,7 @@ class Parser {
 
     void ReturnStmt() {
         match(KEYWORD,"return");
+        generator.add("return","","",""); // 生成函数结束的四元式 显式返回
         match(DELIMITER,";");
     }
 
@@ -436,7 +449,7 @@ public:
         if (currentToken.type != ERROR || currentToken.value != "EOF") {
             cerr << "语法错误: 期望文件结束但得到 " << currentToken.value << " 在 (" << currentToken.row << "," << currentToken.col <<')'<< endl;
         }
-        cout << "语法分析完成，四元式生成完成！" << endl;
+        cout << "四元式生成完成" << endl;
         return generator.getQuadruples();
     }
 };

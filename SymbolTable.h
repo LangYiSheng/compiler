@@ -24,7 +24,6 @@ struct Symbol {
     bool isUsed = false; // 用于检查未使用的变量
     bool isConst = false; // 是否为常量
     int col, row; // 用于输出错误信息
-    int repeat = 0; // 用于局部与全局变量重名的情况
     // only 函数 
     vector<SymbolType> params; // 函数参数列表，检测形参和实参个数是否匹配。 你说得对，虽然可以只用一个数字来表示个数，但是我先用字符串来表示函数参数类型，方便后续扩展
     Symbol() = default;
@@ -60,6 +59,11 @@ public:
         enterScope(); // 全局作用域
     }
 
+    // 从函数名和参数个数生成函数签名 为了实现函数重载
+    static string makeSignature(const string& name,int paramCount) {
+        return name + "#" + to_string(paramCount);
+    }
+
 
     // 进入新作用域（压栈）
     void enterScope() {
@@ -87,9 +91,16 @@ public:
 
     // 添加符号到当前作用域
     bool addSymbol(Symbol symbol) {
-        LanCherLogger::log("符号表", static_cast<string>("添加") + (symbol.type == SYMBOL_FUNCTION ? "函数" : symbol.isConst ? "常量" : "变量") + ": " + symbol.name);
+
+        // 打印log:如果是函数，打印函数名和参数个数，如果是变量，打印变量名
+        LanCherLogger::log("符号表", static_cast<string>("添加") +
+            (symbol.type == SYMBOL_FUNCTION ? "函数" : symbol.isConst ? "常量" : "变量") +
+            ": " + (symbol.type == SYMBOL_FUNCTION ? symbol.name + "( 参数个数:"+to_string(symbol.params.size())+" )" : symbol.name));
+
         auto& currentScope = scopes.back();
-        const string& name = symbol.name;
+        // 如果是函数，使用函数签名来查找
+        const string& name = symbol.type == SYMBOL_FUNCTION ? makeSignature(symbol.name, static_cast<int>(symbol.params.size())) : symbol.name;
+
         if (currentScope.count(name)) {
             const auto& existingSymbol = currentScope[name];
             if (existingSymbol.type == SYMBOL_FUNCTION) {
@@ -102,16 +113,8 @@ public:
             }
             return false;
         }
-        // 至此，在本作用域内没有重名的变量
-        Symbol* existingSymbol = lookup(name);
-        if (existingSymbol == nullptr) {
-            // 在全局作用域内没有重名的变量
-            symbol.repeat = 0;
-        } else {
-            // 在全局作用域内有重名的变量
-            symbol.repeat = existingSymbol->repeat + 1;
-            existingSymbol->repeat++;
-        }
+
+        // 至此，在本作用域内没有重名的变量...放！
         currentScope[name] = symbol;
         return true;
     }
@@ -126,24 +129,35 @@ public:
         return nullptr;
     }
 
+    // 查找函数符号 返回nullptr表示未找到 会查找到全局作用域 返回最近的
+    Symbol* lookup(const string& funcName, int paramCount) {
+        string sig = makeSignature(funcName, paramCount);
+        for (auto it = scopes.rbegin(); it != scopes.rend(); ++it) {
+            if (it->count(sig)) return &((*it)[sig]);
+        }
+        return nullptr;
+    }
+
     // 标记符号为已使用
-    void markUsed(const string& name, const int row, const int col) {
-        Symbol* sym = lookup(name);
+    void markUsed(const string& name, const int row, const int col, int paramCount = -1) {
+        Symbol* sym = (paramCount<0 ? lookup(name) : lookup(name, paramCount));
         if (sym) {
             sym->isUsed = true;
         } else {
-            cerr << "语义错误: 使用了未声明的符号 '" << name << "', 在 (" << row << "," << col << ")\n";
+            cerr << "语义错误: 使用了未声明的符号 '" << name
+                 << (paramCount>=0 ? "#" + to_string(paramCount) : "")
+                 << "', 在 (" << row << "," << col << ")\n";
         }
     }
 
     // 检查函数调用
     bool checkFunctionCall(const string& funcName, const vector<SymbolType>& argTypes , const int row, const int col) {
-        Symbol* sym = lookup(funcName);
+        Symbol* sym = lookup(funcName, static_cast<int>(argTypes.size()));
         if (!sym) {
             cerr << "语义错误: 函数 '" << funcName << "' 未定义, 在 (" << row << "," << col << ")\n";
             return false;
         }
-        if (sym->type != 2) {
+        if (sym->type != SYMBOL_FUNCTION) {
             cerr << "语义错误: '" << funcName << "' 不是函数, 在 (" << row << "," << col << ") ,曾作为 " << (sym->isConst ? "常量" : "变量") << " 定义, 位于 (" << sym->row << "," << sym->col << ")\n";
             return false;
         }
@@ -160,5 +174,4 @@ public:
         // }
         return true;
     }
-
 };
