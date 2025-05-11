@@ -19,15 +19,17 @@ struct Quadruple {
     Quadruple(string op, string arg1, string arg2, string result)
         : op(std::move(op)), arg1(std::move(arg1)), arg2(std::move(arg2)), result(std::move(result)) {}
 
-    string toString() const {
-        return "(" + op + ", " + arg1 + ", " + arg2 + ", " + result + ")";
+    friend ostream& operator<<(ostream& os, const Quadruple& quad) {
+        os << "(" << quad.op << ", " << quad.arg1 << ", " << quad.arg2 << ", " << quad.result << ")";
+        return os;
     }
+
 };
 
 // 四元式生成器
 class QuadrupleGenerator {
     vector<Quadruple> quadruples;  // 存储所有四元式
-    int tempVarCounter = 0;        // 临时变量计数器
+    int tempVarCounter = -1;        // 临时变量计数器
     int labelCounter = 0;          // 标签计数器
 
 public:

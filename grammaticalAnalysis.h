@@ -449,7 +449,7 @@ public:
         if (currentToken.type != ERROR || currentToken.value != "EOF") {
             cerr << "语法错误: 期望文件结束但得到 " << currentToken.value << " 在 (" << currentToken.row << "," << currentToken.col <<')'<< endl;
         }
-        cout << "四元式生成完成" << endl;
+        cout << "[喜报] 四元式生成完成" << endl;
         return generator.getQuadruples();
     }
 };

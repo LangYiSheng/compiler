@@ -16,8 +16,8 @@ int main(int argc, char* argv[]) {
 
     Parser parser;
     vector<Quadruple> quadruples = parser.parse();
-    for (const auto& quad : quadruples) {
-        cout << quad.toString() << endl;
+    for (int i = 0; i < quadruples.size(); ++i) {
+        cout<<i+1<<" "<<quadruples[i]<<";"<<endl;
     }
     closeLexicalAnalysis();
     return 0;
