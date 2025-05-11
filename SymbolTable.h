@@ -123,7 +123,7 @@ public:
     Symbol* lookup(const string& name) {
         for (auto it = scopes.rbegin(); it != scopes.rend(); ++it) {
             if (it->count(name)) {
-                return &((*it)[name]);
+                return &(*it)[name];
             }
         }
         return nullptr;
@@ -133,14 +133,14 @@ public:
     Symbol* lookup(const string& funcName, int paramCount) {
         string sig = makeSignature(funcName, paramCount);
         for (auto it = scopes.rbegin(); it != scopes.rend(); ++it) {
-            if (it->count(sig)) return &((*it)[sig]);
+            if (it->count(sig)) return &(*it)[sig];
         }
         return nullptr;
     }
 
     // 标记符号为已使用
     void markUsed(const string& name, const int row, const int col, int paramCount = -1) {
-        Symbol* sym = (paramCount<0 ? lookup(name) : lookup(name, paramCount));
+        Symbol* sym = paramCount<0 ? lookup(name) : lookup(name, paramCount);
         if (sym) {
             sym->isUsed = true;
         } else {

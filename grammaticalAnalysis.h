@@ -175,7 +175,7 @@ class Parser {
 
     void StmtList() {
         // 语句列表 -> 语句 语句列表|空
-        while (currentToken.type != KEYWORD || (currentToken.value != "end")) {
+        while (currentToken.type != KEYWORD || currentToken.value != "end") {
             Stmt();
             if (currentToken.type == ERROR) {  // 防止死循环
                 if (currentToken.value == "EOF")
@@ -231,7 +231,7 @@ class Parser {
         match(IDENTIFIER);
         match(DELIMITER,"(");
         vector<pair<string,SymbolType>> args = ActParamList();
-        for (int i = int(args.size())-1; i >= 0; --i) {
+        for (int i = static_cast<int>(args.size())-1; i >= 0; --i) {
             generator.add("push", "", "", args[i].first);
         }
         // 这里的args[i].first是参数名，args[i].second是参数类型，为了不改checkFunctionCall的参数类型，使用一些语法糖
@@ -269,7 +269,7 @@ class Parser {
         match(IDENTIFIER);
         match(ASSIGN);
         TempVar exp = Exp();
-        generator.add("=", exp.var, "_", id);
+        generator.add("=", exp.var, "", id);
         match(DELIMITER,";");
     }
 
@@ -281,37 +281,36 @@ class Parser {
         // TempVar cond = ConditionalExp();
         // string elseLabel = generator.newLabel();
         // string endLabel = generator.newLabel();
-        // generator.add("jz", cond.var, "_", elseLabel);
+        // generator.add("jz", cond.var, "", elseLabel);
         // match(KEYWORD,"then");
         // Stmt();
-        // generator.add("j", "_", "_", endLabel);
-        // generator.add("label", elseLabel, "_", "_");
+        // generator.add("j", "", "", endLabel);
+        // generator.add("label", elseLabel, "", "");
         // if (currentToken.type == KEYWORD && currentToken.value == "else") {
         //     match(KEYWORD);
         //     Stmt();
         // }
-        // generator.add("label", endLabel, "_", "_");
+        // generator.add("label", endLabel, "", "");
         // match(KEYWORD,"fi");
 
         // 开玩笑的孩子们 我觉得还是修一下比较好。
         match(KEYWORD, "if");
         TempVar cond = ConditionalExp();
         string elseLabel = generator.newLabel();  // 条件不满足时跳转
-        string endLabel;                          // 有 else 分支时才需要
-        generator.add("jz", cond.var, "_", elseLabel);
+        generator.add("jz", cond.var, "", elseLabel);
         match(KEYWORD, "then");
         Stmt();
         if (currentToken.type == KEYWORD && currentToken.value == "else") {
             match(KEYWORD);
             // 有 else 分支，才需要跳出 if 的 endLabel
-            endLabel = generator.newLabel();
-            generator.add("j", "_", "_", endLabel);
-            generator.add("label", elseLabel, "_", "_");
+            const string endLabel = generator.newLabel();
+            generator.add("j", "", "", endLabel);
+            generator.add("label", elseLabel, "", "");
             Stmt();  // else 分支语句
-            generator.add("label", endLabel, "_", "_");
+            generator.add("label", endLabel, "", "");
         } else {
             // 没有 else，直接贴上 elseLabel 作为结束点
-            generator.add("label", elseLabel, "_", "_");
+            generator.add("label", elseLabel, "", "");
         }
         match(KEYWORD, "fi");
     }
@@ -322,15 +321,15 @@ class Parser {
         string startLabel = generator.newLabel(); // 循环跳回
         string endLabel = generator.newLabel(); // 结束
 
-        generator.add("label", startLabel, "_", "_");
+        generator.add("label", startLabel, "", "");
 
         TempVar cond = ConditionalExp();
-        generator.add("jz", cond.var, "_", endLabel); //如果是false 就结束
+        generator.add("jz", cond.var, "", endLabel); //如果是false 就结束
         match(KEYWORD,"do");
         Stmt();
-        generator.add("j", "_", "_", startLabel); // 否则跳回起点
+        generator.add("j", "", "", startLabel); // 否则跳回起点
 
-        generator.add("label", endLabel, "_", "_");
+        generator.add("label", endLabel, "", "");
         match(KEYWORD,"endwh");
     }
 
