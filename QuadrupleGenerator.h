@@ -3,6 +3,8 @@
 //
 
 #pragma once
+#include <queue>
+#include<algorithm>
 #include <string>
 #include <vector>
 #include <sstream>
@@ -24,7 +26,56 @@ struct Quadruple {
         return os;
     }
 
+    static void printQuadruples(const vector<Quadruple>& quadruples) {
+        for (int i = 0; i < quadruples.size(); ++i) {
+            cout<<i+1<<" "<<quadruples[i]<<";"<<endl;
+        }
+    }
+
+    static vector<Quadruple> resolveLabels(
+        const vector<Quadruple>& quads
+    ) {
+        size_t n = quads.size();
+        // 1. 去掉 label 并计算每条指令的新行号映射
+        vector<int> newLine(n, 0);
+        int cnt = 0;
+        for (size_t i = 0; i < n; ++i) {
+            if (quads[i].op != "label") {
+                ++cnt;
+                newLine[i] = cnt;
+            }
+        }
+
+        // 2. 构造 label->行号 映射
+        unordered_map<string,int> labelTarget;
+        for (size_t i = 0; i < n; ++i) {
+            if (quads[i].op == "label") {
+                string lab = quads[i].result;
+                size_t j = i + 1;
+                while (j < n && quads[j].op == "label") ++j;
+                if (j < n) labelTarget[lab] = newLine[j];
+            }
+        }
+
+        // 3. 去掉 label，修 jump->行号
+        vector<Quadruple> res;
+        res.reserve(cnt);
+        for (size_t i = 0; i < n; ++i) {
+            const auto& q = quads[i];
+            if (q.op == "label") continue;
+            Quadruple tmp = q;
+            if (!tmp.op.empty() && tmp.op[0]=='j' && !tmp.result.empty()) {
+                auto it = labelTarget.find(tmp.result);
+                if (it != labelTarget.end())
+                    tmp.result = to_string(it->second);
+            }
+            res.push_back(move(tmp));
+        }
+
+        return res;
+    }
 };
+
 
 // 四元式生成器
 class QuadrupleGenerator {
@@ -39,8 +90,22 @@ public:
     }
 
     // 生成新的标签 用于if/while等跳转
-    string newLabel() {
-        return "L" + to_string(++labelCounter);
+    int newLabel() {
+        return ++labelCounter;
+    }
+
+    // 添加跳转四元式
+    void addJump(const string &relop, // relop为比较运算符,可以为<,>,<=,>=,==,!=,也可以为空字符串
+                 const string &arg1,
+                 const string &arg2,
+                 int targetLabel) {
+        // 四元式：(j<, a, b, 3)
+        quadruples.emplace_back("j" + relop, arg1, arg2, std::to_string(targetLabel));
+    }
+
+    void addLabel(int label) {
+        // 你可以把它当做一条特别的四元式，也可以单独存标签表
+        quadruples.emplace_back("label", "", "", std::to_string(label));
     }
 
     // 添加四元式
@@ -69,4 +134,5 @@ public:
             quadruples[quadIndex].result = label;
         }
     }
+
 };

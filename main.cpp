@@ -16,9 +16,8 @@ int main(int argc, char* argv[]) {
 
     Parser parser;
     vector<Quadruple> quadruples = parser.parse();
-    for (int i = 0; i < quadruples.size(); ++i) {
-        cout<<i+1<<" "<<quadruples[i]<<";"<<endl;
-    }
+    // Quadruple::printQuadruples(quadruples);
+    Quadruple::printQuadruples(Quadruple::resolveLabels(quadruples));
     closeLexicalAnalysis();
     return 0;
 }

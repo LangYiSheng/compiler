@@ -276,41 +276,22 @@ class Parser {
     void ConditionalStmt() {
         // 条件语句 -> if 条件表达式 then 语句 [ else 语句 ] fi
 
-        // 你可能会问，在没有else 的情况下，这不会重复生成两个标签吗？ 没关系的孩子 这样逻辑统一还安全。
-        // match(KEYWORD,"if");
-        // TempVar cond = ConditionalExp();
-        // string elseLabel = generator.newLabel();
-        // string endLabel = generator.newLabel();
-        // generator.add("jz", cond.var, "", elseLabel);
-        // match(KEYWORD,"then");
-        // Stmt();
-        // generator.add("j", "", "", endLabel);
-        // generator.add("label", elseLabel, "", "");
-        // if (currentToken.type == KEYWORD && currentToken.value == "else") {
-        //     match(KEYWORD);
-        //     Stmt();
-        // }
-        // generator.add("label", endLabel, "", "");
-        // match(KEYWORD,"fi");
-
-        // 开玩笑的孩子们 我觉得还是修一下比较好。
         match(KEYWORD, "if");
-        TempVar cond = ConditionalExp();
-        string elseLabel = generator.newLabel();  // 条件不满足时跳转
-        generator.add("jz", cond.var, "", elseLabel);
+        int elseLabel = generator.newLabel();  // 条件不满足跳转
+        ConditionalExp(elseLabel);
         match(KEYWORD, "then");
         Stmt();
         if (currentToken.type == KEYWORD && currentToken.value == "else") {
             match(KEYWORD);
             // 有 else 分支，才需要跳出 if 的 endLabel
-            const string endLabel = generator.newLabel();
-            generator.add("j", "", "", endLabel);
-            generator.add("label", elseLabel, "", "");
+            int endLabel = generator.newLabel();
+            generator.addJump("","","",endLabel); // 跳出 if 的结束标签
+            generator.addLabel(elseLabel);
             Stmt();  // else 分支语句
-            generator.add("label", endLabel, "", "");
+            generator.addLabel(endLabel);
         } else {
             // 没有 else，直接贴上 elseLabel 作为结束点
-            generator.add("label", elseLabel, "", "");
+            generator.addLabel(elseLabel);
         }
         match(KEYWORD, "fi");
     }
@@ -318,18 +299,19 @@ class Parser {
     void LoopStmt() {
         // 循环语句 -> while 条件表达式 do 语句 endwh
         match(KEYWORD,"while");
-        string startLabel = generator.newLabel(); // 循环跳回
-        string endLabel = generator.newLabel(); // 结束
+        int startLabel = generator.newLabel(); // 循环跳回
+        int endLabel = generator.newLabel(); // 结束
 
-        generator.add("label", startLabel, "", "");
+        generator.addLabel(startLabel);
 
-        TempVar cond = ConditionalExp();
-        generator.add("jz", cond.var, "", endLabel); //如果是false 就结束
+        ConditionalExp(endLabel);
+
         match(KEYWORD,"do");
         Stmt();
-        generator.add("j", "", "", startLabel); // 否则跳回起点
 
-        generator.add("label", endLabel, "", "");
+        generator.addJump("","","",startLabel);
+
+        generator.addLabel(endLabel);
         match(KEYWORD,"endwh");
     }
 
@@ -387,46 +369,51 @@ class Parser {
         return tempVar;
     }
 
-    TempVar ConditionalExp() {
+    void ConditionalExp(int falseLabel) {
         // 条件表达式 -> 关系表达式 {or 关系表达式}
-        TempVar left = RelationExp();
+        int trueLabel = generator.newLabel();
+        int orLabel = generator.newLabel();
+        //如果RelationExp为真，跳到正确的分支，如果为假，则接着执行后续的or
+        RelationExp(orLabel);
+        generator.addJump("", "", "", trueLabel); // 没跳转，说明条件为真，跳到trueLabel
         while (currentToken.type == KEYWORD && currentToken.value == "or") {
-            match(KEYWORD,"or");
-            TempVar right = RelationExp();
-            string temp = generator.newTemp();
-            generator.add("or", left.var, right.var, temp);
-            left.var = temp;
+            // 这里的orLabel是上一个or的标签，打上标签并开新的标签
+            match(KEYWORD, "or");
+            generator.addLabel(orLabel);
+            orLabel = generator.newLabel();
+            RelationExp(orLabel);
+            generator.addJump("", "", "", trueLabel);  // 没跳转，说明条件为真，跳到trueLabel
         }
-        return left;
+        generator.addLabel(orLabel);
+        generator.addJump("","","",falseLabel);
+        // 如果为真，跳到trueLabel，继续执行真代码块
+        generator.addLabel(trueLabel);
     }
 
-    TempVar RelationExp() {
-        // 关系表达式 -> {组合表达式 and 组合表达式}
-        TempVar left = CompExp();
+    void RelationExp(int falseLabel) {
+        // 关系表达式 -> 组合表达式 {and 组合表达式}
+        // 如果没有跳转到falseLabel，说明条件为真，继续执行
+        int trueLabel = generator.newLabel();
+        CompExp(trueLabel);// 如果为真，则继续执行
+        generator.addJump("", "", "", falseLabel); // 如果为假，跳到falseLabel
         while (currentToken.type == KEYWORD && currentToken.value == "and") {
-            match(KEYWORD,"and");
-            TempVar right = CompExp();
-            string temp = generator.newTemp();
-            generator.add("and", left.var, right.var, temp);
-            left.var = temp;
+            match(KEYWORD, "and");
+            generator.addLabel(trueLabel);
+            trueLabel = generator.newLabel();
+            CompExp(trueLabel);
+            generator.addJump("", "", "", falseLabel); // 如果为假，跳到falseLabel
         }
-        return left;
+        generator.addLabel(trueLabel);
     }
 
-    TempVar CompExp() {
+    void CompExp(int trueLabel) {
         // 组合表达式 -> 表达式 关系符 表达式
-        TempVar result;
+        // 如果没有跳转到trueLabel，说明条件为假（继续执行的为假）
         TempVar left = Exp();
         string op = currentToken.value;
         CmpOp();
         TempVar right = Exp();
-
-        // 生成比较运算的四元式
-        result.var = generator.newTemp();
-        result.type = 3; // 3表示临时变量
-        generator.add(op, left.var, right.var, result.var);
-
-        return result;
+        generator.addJump(op, left.var, right.var, trueLabel);
     }
 
     void CmpOp() {
